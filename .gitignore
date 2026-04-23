@@ -1,0 +1,23 @@
+# Secrets — never commit
+.env
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Legacy SQLite file (now using PostgreSQL)
+news.db
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
