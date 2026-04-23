@@ -693,6 +693,34 @@
       justify-content: center;
     }
 
+    .load-more-wrap {
+      margin-top: 20px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .btn-load-more {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.78rem;
+      padding: 12px 28px;
+      border: 1px solid var(--accent);
+      background: transparent;
+      color: var(--accent);
+      cursor: pointer;
+      letter-spacing: 0.08em;
+      transition: background 0.2s, color 0.2s, opacity 0.2s;
+    }
+
+    .btn-load-more:hover:not(:disabled) {
+      background: var(--accent);
+      color: #000;
+    }
+
+    .btn-load-more:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
     .btn-page {
       font-family: 'DM Mono', monospace;
       font-size: 0.78rem;
@@ -958,6 +986,9 @@
       <span id="page-info" class="page-info">Page 1</span>
       <button id="next-btn" class="btn-page">Next →</button>
     </div>
+    <div class="load-more-wrap" id="load-more-wrap" style="display:none;">
+      <button id="load-more-btn" class="btn-load-more">Load More ↓</button>
+    </div>
   </section>
 
   <!-- FOOTER -->
@@ -980,6 +1011,7 @@
     let currentPage     = 1;
     let currentCategory = '';
     let totalArticles   = 0;
+    let refreshInFlight = false;
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     const PALETTES = [
@@ -1043,12 +1075,22 @@
         `Page ${currentPage} of ${totalPages}`;
       document.getElementById('prev-btn').disabled = currentPage <= 1;
       document.getElementById('next-btn').disabled = currentPage >= totalPages;
+
+      const hasMore = currentPage < totalPages;
+      const loadMoreWrap = document.getElementById('load-more-wrap');
+      const loadMoreBtn = document.getElementById('load-more-btn');
+      if (loadMoreWrap && loadMoreBtn) {
+        loadMoreWrap.style.display = hasMore ? 'flex' : 'none';
+        loadMoreBtn.disabled = !hasMore;
+      }
     }
 
     // ── Data loaders ──────────────────────────────────────────────────────────
-    async function loadNews(page = 1, category = '') {
+    async function loadNews(page = 1, category = '', append = false) {
       const grid = document.getElementById('preview-grid');
-      grid.innerHTML = '<div class="news-loading"><div class="spinner"></div>fetching latest stories…</div>';
+      if (!append) {
+        grid.innerHTML = '<div class="news-loading"><div class="spinner"></div>fetching latest stories…</div>';
+      }
 
       try {
         const params = new URLSearchParams({ page, limit: ARTICLES_PER_PAGE });
@@ -1061,17 +1103,26 @@
         totalArticles = data.total;
         currentPage   = data.page;
 
-        if (!data.articles.length) {
+        if (!data.articles.length && !append) {
           grid.innerHTML =
             '<div class="news-loading">No stories yet — scrape is running in background. Refresh in a moment.</div>';
         } else {
-          grid.innerHTML = data.articles.map(makeCard).join('');
+          const cardsHtml = data.articles.map(makeCard).join('');
+          if (append) {
+            grid.insertAdjacentHTML('beforeend', cardsHtml);
+          } else {
+            grid.innerHTML = cardsHtml;
+          }
         }
         updatePagination();
+        return true;
       } catch (e) {
-        grid.innerHTML =
-          '<div class="news-loading">Could not load news. Retrying soon…</div>';
+        if (!append) {
+          grid.innerHTML =
+            '<div class="news-loading">Could not load news. Retrying soon…</div>';
+        }
         console.error('loadNews error:', e);
+        return false;
       }
     }
 
@@ -1138,6 +1189,44 @@
       } catch (e) { /* non-critical */ }
     }
 
+    async function reloadVisiblePages() {
+      if (refreshInFlight) {
+        return false;
+      }
+
+      refreshInFlight = true;
+      const grid = document.getElementById('preview-grid');
+      const previousHtml = grid ? grid.innerHTML : '';
+      const previousPage = currentPage;
+      const targetPage = currentPage;
+      const firstPageOk = await loadNews(1, currentCategory, false);
+      if (!firstPageOk) {
+        if (grid) {
+          grid.innerHTML = previousHtml;
+        }
+        currentPage = previousPage;
+        updatePagination();
+        refreshInFlight = false;
+        return false;
+      }
+
+      for (let page = 2; page <= targetPage; page += 1) {
+        const pageOk = await loadNews(page, currentCategory, true);
+        if (!pageOk) {
+          if (grid) {
+            grid.innerHTML = previousHtml;
+          }
+          currentPage = previousPage;
+          updatePagination();
+          refreshInFlight = false;
+          return false;
+        }
+      }
+
+      refreshInFlight = false;
+      return true;
+    }
+
     // ── Event handlers ────────────────────────────────────────────────────────
     function handleTabClick(e) {
       document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
@@ -1159,8 +1248,31 @@
       if (currentPage < totalPages) loadNews(currentPage + 1, currentCategory);
     });
 
+    document.getElementById('load-more-btn').addEventListener('click', async (e) => {
+      if (refreshInFlight) return;
+      const totalPages = Math.ceil(totalArticles / ARTICLES_PER_PAGE);
+      if (currentPage >= totalPages) return;
+
+      const btn = e.currentTarget;
+      const prevText = btn.textContent;
+      btn.textContent = 'Loading...';
+      btn.disabled = true;
+
+      refreshInFlight = true;
+
+      try {
+        await loadNews(currentPage + 1, currentCategory, true);
+      } finally {
+        refreshInFlight = false;
+      }
+
+      btn.textContent = prevText;
+      updatePagination();
+    });
+
     // Manual refresh button — triggers a backend scrape then re-fetches the grid
     document.getElementById('refresh-btn').addEventListener('click', async (e) => {
+      if (refreshInFlight) return;
       const btn = e.currentTarget;
       btn.textContent = '↻ Refreshing…';
       btn.disabled    = true;
@@ -1169,7 +1281,7 @@
         // Give the background thread ~3 s to finish before re-fetching
         await new Promise(r => setTimeout(r, 3000));
         await Promise.all([
-          loadNews(currentPage, currentCategory),
+          reloadVisiblePages(),
           loadStats(),
           loadTicker(),
         ]);
@@ -1186,7 +1298,8 @@
 
     // Auto-refresh the displayed grid on the configured interval (no full reload)
     setInterval(async () => {
-      await loadNews(currentPage, currentCategory);
+      if (refreshInFlight) return;
+      await reloadVisiblePages();
       await loadStats();
       await loadTicker();
     }, REFRESH_INTERVAL);
