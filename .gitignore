@@ -18,6 +18,8 @@ news.db
 # macOS
 .DS_Store
 
-# IDE
+# IDE / editor metadata
 .vscode/
 .idea/
+.qodo/
+.sixth/
