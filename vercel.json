@@ -1,21 +1,13 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "app.py",
-      "use": "@vercel/python"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "app.py"
-    }
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api/index" }
   ],
   "crons": [
-    {
-      "path": "/api/cron",
-      "schedule": "0 * * * *"
+    { "path": "/api/cron", "schedule": "0 * * * *" }
+  ],
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 60
     }
-  ]
+  }
 }
