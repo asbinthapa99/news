@@ -33,23 +33,25 @@ if not DATABASE_URL:
 MAX_ARTICLES = 300   # maximum rows kept in the database (oldest are trimmed)
 
 # ── RSS feed sources ────────────────────────────────────────────────────────────
+# All sources below include images in their feeds (media:thumbnail / enclosure).
+# PyPI New Packages and Python Insider removed — no images, spammy volume.
 RSS_FEEDS = [
-    # Python-specific
-    {"name": "Planet Python",    "url": "https://planetpython.org/rss20.xml",                         "category": "Python"},
-    {"name": "Python Insider",   "url": "https://blog.python.org/feeds/posts/default?alt=rss",        "category": "Python"},
-    {"name": "Real Python",      "url": "https://realpython.com/atom.xml",                            "category": "Python"},
-    {"name": "PyPI New Packages","url": "https://pypi.org/rss/packages.xml",                          "category": "Python"},
-    # General tech
-    {"name": "TechCrunch",       "url": "https://techcrunch.com/feed/",                               "category": "Technology"},
-    {"name": "Ars Technica",     "url": "https://feeds.arstechnica.com/arstechnica/index",             "category": "Technology"},
-    {"name": "The Verge",        "url": "https://www.theverge.com/rss/index.xml",                     "category": "Technology"},
-    {"name": "Hacker News",      "url": "https://hnrss.org/frontpage",                                "category": "Tech"},
-    # World news
-    {"name": "BBC News",         "url": "http://feeds.bbci.co.uk/news/rss.xml",                       "category": "World"},
-    {"name": "Reuters",          "url": "https://feeds.reuters.com/reuters/topNews",                  "category": "World"},
-    {"name": "NPR",              "url": "https://feeds.npr.org/1001/rss.xml",                         "category": "World"},
-    {"name": "Al Jazeera",       "url": "https://www.aljazeera.com/xml/rss/all.xml",                  "category": "World"},
-    # Science
-    {"name": "NASA",             "url": "https://www.nasa.gov/rss/dyn/breaking_news.rss",             "category": "Science"},
-    {"name": "New Scientist",    "url": "https://www.newscientist.com/feed/home/",                    "category": "Science"},
+    # AI & Technology (image-rich)
+    {"name": "TechCrunch",           "url": "https://techcrunch.com/feed/",                                    "category": "AI & Tech"},
+    {"name": "The Verge",            "url": "https://www.theverge.com/rss/index.xml",                         "category": "AI & Tech"},
+    {"name": "Ars Technica",         "url": "https://feeds.arstechnica.com/arstechnica/index",                 "category": "AI & Tech"},
+    {"name": "Wired",                "url": "https://www.wired.com/feed/rss",                                  "category": "AI & Tech"},
+    {"name": "VentureBeat",          "url": "https://venturebeat.com/feed/",                                   "category": "AI & Tech"},
+    {"name": "MIT Tech Review",      "url": "https://www.technologyreview.com/feed/",                          "category": "AI & Tech"},
+    # World news (image-rich)
+    {"name": "BBC News",             "url": "http://feeds.bbci.co.uk/news/rss.xml",                           "category": "World"},
+    {"name": "Al Jazeera",           "url": "https://www.aljazeera.com/xml/rss/all.xml",                      "category": "World"},
+    {"name": "NPR",                  "url": "https://feeds.npr.org/1001/rss.xml",                              "category": "World"},
+    {"name": "The Guardian",         "url": "https://www.theguardian.com/world/rss",                           "category": "World"},
+    # Science & Space
+    {"name": "NASA",                 "url": "https://www.nasa.gov/rss/dyn/breaking_news.rss",                  "category": "Science"},
+    {"name": "New Scientist",        "url": "https://www.newscientist.com/feed/home/",                         "category": "Science"},
+    # Python / Dev
+    {"name": "Real Python",          "url": "https://realpython.com/atom.xml",                                 "category": "Python"},
+    {"name": "Hacker News",          "url": "https://hnrss.org/frontpage",                                     "category": "Tech"},
 ]
