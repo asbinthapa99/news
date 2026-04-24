@@ -1,46 +1,41 @@
-# PyCast — Automated Python & World News
+# PyCast News
 
-A fully automated news aggregator. The Flask backend scrapes 14 RSS feeds on a configurable schedule, stores articles in Neon PostgreSQL, and serves them through a JSON API. The frontend renders everything in real-time with no page reloads.
-
-The app supports both deployment models:
-- **Vercel (serverless):** Vercel Cron calls `/api/cron` hourly.
-- **Persistent hosts (Railway / Render / Docker):** APScheduler runs in-process.
+A fully automated news aggregator built with Flask and PostgreSQL. Scrapes 14 image-rich RSS feeds every hour, stores articles in Neon PostgreSQL, and serves them through a JSON API consumed by a real-time dark-theme frontend — no page reloads, no manual intervention needed after the first deploy.
 
 ---
 
-## How it works (fully automated)
+## How it works
 
 ```
-Vercel mode (serverless)
-  Vercel Cron (hourly)
-    → GET /api/cron (Authorization: Bearer $CRON_SECRET)
-    → scraper.py fetches feeds concurrently
-    → database.py saves new articles to Neon PostgreSQL (duplicates skipped)
+GitHub Actions (free, hourly cron)
+  → POST /api/refresh on Vercel
+  → scraper.py fetches 14 feeds concurrently (ThreadPoolExecutor)
+  → database.py inserts new articles into Neon PostgreSQL
+    (ON CONFLICT DO NOTHING — duplicates silently skipped)
+  → oldest rows trimmed to keep MAX_ARTICLES = 300
 
-Persistent-host mode (Railway / Render / Docker)
-  APScheduler (background thread)
-    → scraper.py fetches feeds concurrently
-    → database.py saves new articles to Neon PostgreSQL (duplicates skipped)
-
-Every page load / N hours
-  Browser JS polls /api/news
-    → fresh cards render without a full reload
+Browser
+  → polls /api/news every hour via Fetch API
+  → re-renders news cards without a full page reload
+  → manual Refresh button triggers an immediate scrape
 ```
 
-No manual scripts to run after initial deploy.
+On persistent hosts (Railway / Render / Docker) APScheduler runs the same loop in-process — no GitHub Actions needed.
 
 ---
 
 ## Features
 
-- **Multi-source RSS scraping** — Planet Python, Real Python, BBC News, Reuters, TechCrunch, Ars Technica, Hacker News, NASA, and more (14 sources).
-- **Thumbnail extraction** — pulls images from `media:thumbnail`, `media:content`, enclosures, and inline `<img>` tags.
-- **Duplicate prevention** — `UNIQUE` constraint on `link`; duplicates silently skipped on every scrape.
-- **Graceful error handling** — a failed feed logs a one-liner and is skipped; the rest continues.
-- **Concurrent feed fetching** — feeds are fetched in parallel to reduce total refresh time.
-- **Category filter tabs** — Python / World / Technology / Science / Tech (auto-populated from DB).
-- **Pagination** — 6 cards per page, prev/next controls.
-- **Manual refresh button** — POSTs to `/api/refresh`, waits 3 s, re-renders the grid.
+- **14 image-rich RSS sources** — TechCrunch, The Verge, Wired, VentureBeat, Ars Technica, MIT Tech Review, BBC News, Al Jazeera, NPR, The Guardian, NASA, New Scientist, Real Python, Hacker News
+- **Thumbnail extraction** — 4 fallback strategies: `media:thumbnail`, `media:content`, enclosure, inline `<img>` tag
+- **Category filter tabs** — AI & Tech / World / Science / Python / Tech (auto-populated from DB)
+- **Pagination** — 6 cards per page, prev/next controls
+- **Scrolling headline ticker** — latest 14 headlines from DB
+- **Duplicate prevention** — `UNIQUE` constraint on article URL; duplicates skipped on every scrape
+- **Concurrent scraping** — all feeds fetched in parallel to minimise refresh time
+- **Graceful feed errors** — a failing feed logs a one-liner and is skipped; others continue
+- **Manual refresh** — POST `/api/refresh` button re-scrapes immediately
+- **Free CI/CD** — GitHub Actions validates syntax + builds Docker image on every push
 
 ---
 
@@ -53,7 +48,7 @@ No manual scripts to run after initial deploy.
 | RSS parsing | feedparser 6 |
 | HTML stripping | BeautifulSoup 4 + lxml |
 | HTTP client | requests |
-| Scheduling | Vercel Cron (serverless) or APScheduler 3 (persistent hosts) |
+| Scheduling | GitHub Actions cron (Vercel) · APScheduler 3 (persistent hosts) |
 | Database | PostgreSQL on Neon (psycopg2-binary) |
 | Config / secrets | python-dotenv |
 | CI/CD | GitHub Actions |
@@ -70,25 +65,28 @@ news-1/
 ├── .gitignore
 ├── .github/
 │   └── workflows/
-│       └── ci.yml                # Validates + builds Docker on every push
+│       ├── ci.yml                # Syntax check + Docker build on every push
+│       └── scrape.yml            # Hourly cron: POST /api/refresh on Vercel
+├── api/
+│   └── index.py                  # Vercel entry point (imports app from app.py)
+├── templates/
+│   └── index.html                # Single-page dark-theme frontend
 ├── app.py                        # Flask routes + APScheduler setup
 ├── config.py                     # All tunable settings (loads .env)
-├── scraper.py                    # RSS feed fetcher and thumbnail extractor
+├── scraper.py                    # RSS feed fetcher + thumbnail extractor
 ├── database.py                   # PostgreSQL helpers (init, save, query)
 ├── requirements.txt
+├── vercel.json                   # Vercel rewrite rule (routes everything to api/index)
 ├── Procfile                      # For Railway / Heroku
 ├── Dockerfile                    # For any container platform
 ├── docker-compose.yml            # Local Docker dev
-├── vercel.json                   # Vercel serverless + cron config
 ├── railway.json                  # Railway deployment config
-├── render.yaml                   # Render.com deployment config
-└── templates/
-    └── index.html                # Single-page frontend (Jinja2 template)
+└── render.yaml                   # Render.com deployment config
 ```
 
 ---
 
-## Local development (zero setup)
+## Local Development
 
 ```bash
 git clone <your-repo>
@@ -97,57 +95,66 @@ cd news-1
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 
-# .env already contains DATABASE_URL — just run:
+# Create .env with your Neon connection string:
+echo 'DATABASE_URL=postgresql://user:pass@host/db' > .env
+
 python app.py
 ```
 
-Open [http://localhost:5000](http://localhost:5000). News appears within ~15 seconds.
+Open [http://localhost:5000](http://localhost:5000). APScheduler runs a scrape immediately at startup — articles appear within ~15 seconds.
 
 ---
 
-## Deploy to Vercel (recommended for this repo)
+## Deploy to Vercel (recommended)
+
+Vercel runs the Flask app as a serverless function. Hourly scraping is handled by a free GitHub Actions workflow — Vercel's built-in cron requires a paid plan.
+
+### Step 1 — Deploy to Vercel
 
 1. Push this repo to GitHub
-2. Go to [vercel.com](https://vercel.com) → **Add New Project**
-3. Import this repository
-4. In **Environment Variables**, set:
-  ```
-  DATABASE_URL = <your Neon connection string>
-  CRON_SECRET = <a strong random secret>
-  VERCEL = 1
-  ENABLE_SCHEDULER = 0
-  SCRAPER_TIMEOUT_SECONDS = 8
-  SCRAPER_MAX_WORKERS = 8
-  ```
-5. Deploy
+2. Go to [vercel.com](https://vercel.com) → **Add New Project** → import this repo
+3. In **Environment Variables**, add:
 
-`vercel.json` configures an hourly cron to call `/api/cron`.
-Vercel automatically sends `Authorization: Bearer <CRON_SECRET>` for cron invocations when `CRON_SECRET` is set.
+   | Variable | Value |
+   |---|---|
+   | `DATABASE_URL` | Your Neon connection string |
+   | `VERCEL` | `1` |
+   | `ENABLE_SCHEDULER` | `0` |
+   | `SCRAPER_TIMEOUT_SECONDS` | `8` |
+   | `SCRAPER_MAX_WORKERS` | `8` |
 
-Notes:
-- On Vercel Hobby, function duration is strict. Keep feed timeouts low and use concurrency.
-- On Pro, higher execution limits give more headroom.
+4. Click **Deploy**
+
+### Step 2 — Set up hourly scraping via GitHub Actions
+
+1. Copy your Vercel deployment URL (e.g. `https://your-app.vercel.app`)
+2. In your GitHub repo → **Settings → Secrets and variables → Actions** → **New repository secret**:
+
+   | Secret name | Value |
+   |---|---|
+   | `VERCEL_APP_URL` | `https://your-app.vercel.app` |
+
+3. That's it. `.github/workflows/scrape.yml` runs at the top of every hour and POSTs to `/api/refresh`, which triggers a full scrape.
+
+You can also trigger a manual run from **Actions → Hourly News Scrape → Run workflow**.
 
 ---
 
-## Deploy to Railway (alternative — persistent host)
+## Deploy to Railway (persistent host — alternative)
 
-**One-time setup (~5 minutes):**
+Railway runs the app as a long-lived process with APScheduler handling the hourly scrape in-process. No GitHub Actions cron needed.
 
 1. Push this repo to GitHub
 2. Go to [railway.app](https://railway.app) → **New Project → Deploy from GitHub repo**
 3. Select this repo
-4. Go to **Variables** tab → add:
-   ```
-   DATABASE_URL = <your Neon connection string>
-   ```
+4. **Variables** tab → add `DATABASE_URL`
 5. Click **Deploy**
 
-That's it. Railway reads `railway.json` and `Dockerfile` automatically. Every future `git push` to `main` triggers a new deploy — GitHub Actions validates the code first, then Railway picks it up.
+Railway reads `railway.json` and `Dockerfile` automatically. Every `git push main` triggers a new deploy after GitHub Actions CI passes.
 
 ---
 
-## Deploy to Render (alternative — persistent host)
+## Deploy to Render (persistent host — alternative)
 
 1. Push this repo to GitHub
 2. Go to [render.com](https://render.com) → **New Web Service → Connect repo**
@@ -159,58 +166,78 @@ Auto-deploys on every push to `main`.
 
 ---
 
-## Deploy with Docker (any VPS / cloud)
+## Deploy with Docker (any VPS)
 
 ```bash
 # Build
 docker build -t pycast-news .
 
-# Run (reads DATABASE_URL from .env)
+# Run
 docker run -d --env-file .env -p 5000:8080 --restart unless-stopped pycast-news
 ```
 
 Or with Docker Compose:
+
 ```bash
 docker compose up -d
 ```
 
 ---
 
-## CI/CD pipeline (GitHub Actions)
+## CI/CD Pipeline
 
-On every push or PR to `main`, `.github/workflows/ci.yml` runs automatically:
+Two GitHub Actions workflows run automatically:
+
+### `ci.yml` — runs on every push and PR to `main`
 
 | Step | What it does |
 |---|---|
-| **Validate** | Installs deps, checks Python syntax, verifies all modules import |
-| **Docker build** | Builds the Docker image to catch any container issues |
+| **Validate** | Installs deps, compiles all `.py` files, verifies all modules import |
+| **Docker build** | Builds the Docker image to catch container issues early |
 
-If either step fails, the PR is blocked. Railway / Render only deploy after checks pass.
+Failed checks block merges to `main`.
+
+### `scrape.yml` — runs every hour at `:00`
+
+| Step | What it does |
+|---|---|
+| **Trigger scrape** | POSTs to `$VERCEL_APP_URL/api/refresh`; fails the run if the response is not HTTP 200 |
+
+Can also be triggered manually via **Actions → Hourly News Scrape → Run workflow**.
 
 ---
 
 ## Configuration
 
-All tunable settings are in `config.py`:
+All tunable settings live in `config.py`:
 
 ```python
-REFRESH_INTERVAL_HOURS = 1   # 1 = hourly, 5 = every 5 hours
-MAX_ARTICLES = 300           # oldest rows trimmed beyond this
-SCRAPER_TIMEOUT_SECONDS = 8
-SCRAPER_MAX_WORKERS = 8
+REFRESH_INTERVAL_HOURS = 1   # how often APScheduler scrapes (persistent hosts)
+MAX_ARTICLES = 300           # oldest rows trimmed when this limit is exceeded
+SCRAPER_TIMEOUT_SECONDS = 8  # per-feed HTTP timeout
+SCRAPER_MAX_WORKERS = 8      # parallel feed fetchers
 ```
 
-`DATABASE_URL` is loaded from `.env` — edit that file to point at a different database.
+Environment variables (set in `.env` locally, or in Vercel / Railway / Render dashboard):
 
-Additional env vars:
-- `VERCEL=1` enables serverless runtime mode.
-- `ENABLE_SCHEDULER=0` disables APScheduler (recommended on Vercel).
-- `CRON_SECRET` is required for `/api/cron` authorization.
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection string (required) |
+| `VERCEL` | Set to `1` on Vercel to enable serverless mode |
+| `ENABLE_SCHEDULER` | Set to `0` to disable APScheduler (recommended on Vercel) |
+| `CRON_SECRET` | Optional bearer token for the protected `/api/cron` endpoint |
+| `SCRAPER_TIMEOUT_SECONDS` | Per-feed timeout in seconds (default: `8`) |
+| `SCRAPER_MAX_WORKERS` | ThreadPoolExecutor worker count (default: `8`) |
 
-To add a news source, append to `RSS_FEEDS` in `config.py`:
+### Adding a news source
+
+Append to `RSS_FEEDS` in `config.py`:
+
 ```python
 {"name": "My Blog", "url": "https://example.com/feed.xml", "category": "Tech"}
 ```
+
+Categories shown in the filter tabs are auto-populated from whatever is in the database — no other changes needed.
 
 ---
 
@@ -218,14 +245,60 @@ To add a news source, append to `RSS_FEEDS` in `config.py`:
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/` | Frontend |
-| `GET` | `/health` | Health check (used by Railway / Render / Docker) |
-| `GET` | `/api/news` | Articles (`?page=1&limit=6&category=World`) |
-| `GET` | `/api/stats` | `total_articles`, `total_sources`, `last_updated` |
-| `GET` | `/api/ticker` | Latest 14 headlines |
-| `GET` | `/api/categories` | Distinct category names |
-| `POST` | `/api/refresh` | Trigger an immediate scrape |
-| `GET` / `POST` | `/api/cron` | Protected cron trigger (Vercel) |
+| `GET` | `/` | Frontend (single-page app) |
+| `GET` | `/health` | Health check — returns `{"status": "ok"}` |
+| `GET` | `/api/news` | Articles — supports `?page=1&limit=6&category=World` |
+| `GET` | `/api/stats` | `{"total_articles", "total_sources", "last_updated"}` |
+| `GET` | `/api/ticker` | Latest 14 headlines for the scrolling ticker |
+| `GET` | `/api/categories` | Distinct category names currently in the DB |
+| `POST` | `/api/refresh` | Trigger an immediate scrape (no auth required) |
+| `GET/POST` | `/api/cron` | Protected scrape trigger — requires `Authorization: Bearer <CRON_SECRET>` |
+
+`/api/news` response shape:
+
+```json
+{
+  "articles": [
+    {
+      "id": 1,
+      "title": "...",
+      "summary": "...",
+      "link": "https://...",
+      "pub_date": "...",
+      "image_url": "https://...",
+      "source": "TechCrunch",
+      "category": "AI & Tech",
+      "created_at": "2026-04-24T13:00:00+00:00"
+    }
+  ],
+  "total": 300,
+  "page": 1,
+  "limit": 6
+}
+```
+
+---
+
+## News Sources
+
+| Source | Category |
+|---|---|
+| TechCrunch | AI & Tech |
+| The Verge | AI & Tech |
+| Ars Technica | AI & Tech |
+| Wired | AI & Tech |
+| VentureBeat | AI & Tech |
+| MIT Tech Review | AI & Tech |
+| BBC News | World |
+| Al Jazeera | World |
+| NPR | World |
+| The Guardian | World |
+| NASA | Science |
+| New Scientist | Science |
+| Real Python | Python |
+| Hacker News | Tech |
+
+All sources were selected for reliable image availability in their feeds (`media:thumbnail` / enclosure).
 
 ---
 
