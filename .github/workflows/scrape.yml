@@ -16,12 +16,11 @@ jobs:
     steps:
       - name: Call /api/cron on Vercel deployment
         run: |
-          curl -s -o response.json -w "%{http_code}" \
-            -X GET "${{ secrets.VERCEL_APP_URL }}/api/cron" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-          | tee status_code.txt
+          URL=$(echo "${{ secrets.VERCEL_APP_URL }}" | sed 's:/*$::')
+          STATUS=$(curl -s -L -o response.json -w "%{http_code}" \
+            -X GET "${URL}/api/cron" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
 
-          STATUS=$(cat status_code.txt)
           echo "HTTP status: $STATUS"
           echo "Response:" && cat response.json
 
