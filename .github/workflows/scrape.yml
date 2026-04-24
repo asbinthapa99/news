@@ -1,0 +1,28 @@
+name: Hourly News Scrape
+
+# Runs at the top of every hour via GitHub Actions (free).
+# This replaces Vercel Cron — no paid plan needed.
+on:
+  schedule:
+    - cron: "0 * * * *"   # every hour at :00
+  workflow_dispatch:        # also lets you click "Run workflow" manually in GitHub UI
+
+jobs:
+  scrape:
+    name: Trigger scrape
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Call /api/cron on Vercel deployment
+        run: |
+          curl -s -o response.json -w "%{http_code}" \
+            -X GET "${{ secrets.VERCEL_APP_URL }}/api/cron" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+          | tee status_code.txt
+
+          STATUS=$(cat status_code.txt)
+          echo "HTTP status: $STATUS"
+          echo "Response:" && cat response.json
+
+          [ "$STATUS" = "200" ] || exit 1
